@@ -1,54 +1,4 @@
 import type { Level } from '@/types/synth';
-import { generateSyntheticWaveform, generateSyntheticWaveformWithPhase, generateSpectrum } from '@/utils/waveformMatch';
-
-const SAMPLE_RATE = 44100;
-const WAVE_LEN = 2048;
-const SPEC_LEN = 512;
-
-function buildSignatures(
-  oscType: OscillatorType,
-  freq: number,
-  lfoRate: number,
-  lfoDepth: number,
-  filterCutoff: number,
-  filterQ: number
-): { waveform: number[]; spectrum: number[] } {
-  const wave = generateSyntheticWaveform(
-    oscType, freq, SAMPLE_RATE, WAVE_LEN, lfoRate, lfoDepth, filterCutoff, filterQ
-  );
-  let spec: Float32Array;
-  if (lfoRate > 0 && lfoDepth > 0) {
-    const PHASES = 24;
-    const acc = new Float64Array(SPEC_LEN);
-    for (let p = 0; p < PHASES; p++) {
-      const phase = (p / PHASES) * Math.PI * 2;
-      const w = generateSyntheticWaveformWithPhase(
-        oscType, freq, SAMPLE_RATE, WAVE_LEN, lfoRate, lfoDepth, filterCutoff, filterQ, phase
-      );
-      const s = generateSpectrum(w, SPEC_LEN);
-      for (let i = 0; i < SPEC_LEN; i++) acc[i] += s[i];
-    }
-    spec = new Float32Array(SPEC_LEN);
-    for (let i = 0; i < SPEC_LEN; i++) spec[i] = acc[i] / PHASES;
-  } else {
-    spec = generateSpectrum(wave, SPEC_LEN);
-  }
-  return {
-    waveform: Array.from(wave),
-    spectrum: Array.from(spec),
-  };
-}
-
-const LEVEL1_SIGS = buildSignatures('sine', 440, 0, 0, 0, 0);
-const LEVEL2_SIGS = buildSignatures('square', 220, 0, 0, 1200, 0.5);
-const LEVEL3_SIGS = buildSignatures('sawtooth', 330, 0, 0, 800, 1);
-const LEVEL4_SIGS = buildSignatures('sine', 220, 5, 80, 0, 0);
-const LEVEL5_SIGS = buildSignatures('sawtooth', 440, 0.5, 20, 3000, 3);
-const LEVEL6_SIGS = buildSignatures('triangle', 180, 10, 150, 0, 0);
-const LEVEL7_SIGS = buildSignatures('square', 660, 0, 0, 600, 5);
-const LEVEL8_SIGS = buildSignatures('sawtooth', 550, 2, 120, 1500, 2);
-const LEVEL9_SIGS = buildSignatures('sine', 880, 15, 100, 8000, 0.1);
-const LEVEL10_SIGS = buildSignatures('triangle', 110, 3, 200, 500, 7);
 
 export const LEVELS: Level[] = [
   {
@@ -72,7 +22,6 @@ export const LEVELS: Level[] = [
         vca: { initialGain: 0.7, modAmount: 0 },
         output: { masterVolume: 0.3 },
       },
-      ...LEVEL1_SIGS,
     },
   },
   {
@@ -99,7 +48,6 @@ export const LEVELS: Level[] = [
         vca: { initialGain: 0.7, modAmount: 0 },
         output: { masterVolume: 0.3 },
       },
-      ...LEVEL2_SIGS,
     },
   },
   {
@@ -126,7 +74,6 @@ export const LEVELS: Level[] = [
         vca: { initialGain: 0.7, modAmount: 0 },
         output: { masterVolume: 0.3 },
       },
-      ...LEVEL3_SIGS,
     },
   },
   {
@@ -153,7 +100,6 @@ export const LEVELS: Level[] = [
         vca: { initialGain: 0.7, modAmount: 0 },
         output: { masterVolume: 0.3 },
       },
-      ...LEVEL4_SIGS,
     },
   },
   {
@@ -181,7 +127,6 @@ export const LEVELS: Level[] = [
         vca: { initialGain: 0.7, modAmount: 0 },
         output: { masterVolume: 0.3 },
       },
-      ...LEVEL5_SIGS,
     },
   },
   {
@@ -208,7 +153,6 @@ export const LEVELS: Level[] = [
         vca: { initialGain: 0.7, modAmount: 0 },
         output: { masterVolume: 0.3 },
       },
-      ...LEVEL6_SIGS,
     },
   },
   {
@@ -235,7 +179,6 @@ export const LEVELS: Level[] = [
         vca: { initialGain: 0.7, modAmount: 0 },
         output: { masterVolume: 0.3 },
       },
-      ...LEVEL7_SIGS,
     },
   },
   {
@@ -264,7 +207,6 @@ export const LEVELS: Level[] = [
         vca: { initialGain: 0.7, modAmount: 0 },
         output: { masterVolume: 0.3 },
       },
-      ...LEVEL8_SIGS,
     },
   },
   {
@@ -292,7 +234,6 @@ export const LEVELS: Level[] = [
         vca: { initialGain: 0.7, modAmount: 0 },
         output: { masterVolume: 0.3 },
       },
-      ...LEVEL9_SIGS,
     },
   },
   {
@@ -321,7 +262,6 @@ export const LEVELS: Level[] = [
         vca: { initialGain: 0.7, modAmount: 0 },
         output: { masterVolume: 0.3 },
       },
-      ...LEVEL10_SIGS,
     },
   },
 ];

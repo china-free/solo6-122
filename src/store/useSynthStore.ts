@@ -4,7 +4,7 @@ import { LEVELS } from '@/data/levels';
 import { MODULE_DEFS, getModuleDef } from '@/data/moduleDefs';
 import { audioEngine } from '@/engine/AudioEngine';
 import { getRandomCableColor } from '@/utils/colorPalette';
-import { computeMatchScore } from '@/utils/waveformMatch';
+import { computeDualMatchScore } from '@/utils/waveformMatch';
 
 type View = 'home' | 'play';
 
@@ -58,6 +58,12 @@ function buildDefaultParams(): ParamMap {
   return result;
 }
 
+function applyTargetForLevel(lvl: Level): void {
+  if (audioEngine.isInitialized()) {
+    audioEngine.setTargetConfiguration(lvl.target.params, lvl.target.cables);
+  }
+}
+
 export const useSynthStore = create<SynthState>((set, get) => ({
   view: 'home',
   currentLevelId: 1,
@@ -91,6 +97,7 @@ export const useSynthStore = create<SynthState>((set, get) => ({
     if (audioEngine.isInitialized()) {
       audioEngine.applyAllParams(defParams);
       audioEngine.disconnectAll();
+      audioEngine.setTargetConfiguration(lvl.target.params, lvl.target.cables);
     }
   },
 
@@ -100,6 +107,10 @@ export const useSynthStore = create<SynthState>((set, get) => ({
       const { params, cables } = get();
       audioEngine.applyAllParams(params);
       audioEngine.applyAllCables(cables);
+      const lvl = get().getCurrentLevel();
+      if (lvl) {
+        audioEngine.setTargetConfiguration(lvl.target.params, lvl.target.cables);
+      }
     }
     audioEngine.resume();
   },
@@ -200,8 +211,9 @@ export const useSynthStore = create<SynthState>((set, get) => ({
     const state = get();
     const lvl = state.getCurrentLevel();
     if (!lvl) return;
+    applyTargetForLevel(lvl);
     set({ isPlayingTarget: true });
-    audioEngine.previewTargetSound(lvl.target.params, lvl.target.cables, 2);
+    audioEngine.previewTargetSound(2);
     setTimeout(() => set({ isPlayingTarget: false }), 2200);
   },
 
@@ -210,24 +222,35 @@ export const useSynthStore = create<SynthState>((set, get) => ({
     const lvl = state.getCurrentLevel();
     if (!lvl || !audioEngine.isInitialized()) return;
     set({ isCheckingMatch: true });
+    applyTargetForLevel(lvl);
 
     const TARGET_FRAMES = 24;
     let frames = 0;
     let totalScore = 0;
-    const timeBuf = new Uint8Array(2048);
-    const freqBuf = new Uint8Array(1024);
-    const accFreq = new Float64Array(1024);
+
+    const pTime = new Uint8Array(2048);
+    const pFreq = new Uint8Array(1024);
+    const tTime = new Uint8Array(2048);
+    const tFreq = new Uint8Array(1024);
+
+    const accPFreq = new Float64Array(1024);
+    const accTFreq = new Float64Array(1024);
 
     const sample = () => {
-      audioEngine.getTimeDomainData(timeBuf);
-      audioEngine.getFrequencyData(freqBuf);
-      for (let i = 0; i < 1024; i++) accFreq[i] += freqBuf[i];
-      const s1 = computeMatchScore(
-        lvl.target.waveform,
-        lvl.target.spectrum,
-        timeBuf,
-        freqBuf
-      );
+      audioEngine.getDualTimeDomain(pTime, tTime);
+      audioEngine.getDualFrequency(pFreq, tFreq);
+
+      for (let i = 0; i < 1024; i++) {
+        accPFreq[i] += pFreq[i];
+        accTFreq[i] += tFreq[i];
+      }
+
+      const s1 = computeDualMatchScore({
+        playerWave: pTime,
+        playerSpec: pFreq,
+        targetWave: tTime,
+        targetSpec: tFreq,
+      });
       totalScore += s1.total;
       frames++;
       set({ matchScore: Math.round(totalScore / frames) });
@@ -235,14 +258,18 @@ export const useSynthStore = create<SynthState>((set, get) => ({
       if (frames < TARGET_FRAMES) {
         requestAnimationFrame(sample);
       } else {
-        const avgFreq = new Uint8Array(1024);
-        for (let i = 0; i < 1024; i++) avgFreq[i] = Math.round(accFreq[i] / TARGET_FRAMES);
-        const s2 = computeMatchScore(
-          lvl.target.waveform,
-          lvl.target.spectrum,
-          timeBuf,
-          avgFreq
-        );
+        const avgPFreq = new Uint8Array(1024);
+        const avgTFreq = new Uint8Array(1024);
+        for (let i = 0; i < 1024; i++) {
+          avgPFreq[i] = Math.round(accPFreq[i] / TARGET_FRAMES);
+          avgTFreq[i] = Math.round(accTFreq[i] / TARGET_FRAMES);
+        }
+        const s2 = computeDualMatchScore({
+          playerWave: pTime,
+          playerSpec: avgPFreq,
+          targetWave: tTime,
+          targetSpec: avgTFreq,
+        });
         const frameAvg = totalScore / frames;
         const finalScore = Math.round(frameAvg * 0.4 + s2.total * 0.6);
         set({

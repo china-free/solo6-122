@@ -1,55 +1,68 @@
 import type { Cable, JackType, ModuleId, ParamMap, WaveformType, FilterType } from '@/types/synth';
-import { MODULE_DEFS } from '@/data/moduleDefs';
-import { getJackDef } from '@/data/moduleDefs';
+import { MODULE_DEFS, getJackDef } from '@/data/moduleDefs';
 
 type AudioJackRef = {
   node?: AudioNode;
   param?: AudioParam;
 };
 
-class AudioEngine {
-  private ctx: AudioContext | null = null;
-  private masterGain: GainNode | null = null;
-  private analyserTime: AnalyserNode | null = null;
-  private analyserFreq: AnalyserNode | null = null;
+type GraphKind = 'player' | 'target';
+
+const PARAM_DEFS: Record<ModuleId, string[]> = {
+  vco1: ['frequency', 'waveform'],
+  vco2: ['frequency', 'waveform'],
+  vcf: ['cutoff', 'resonance', 'filterType'],
+  vca: ['initialGain', 'modAmount'],
+  lfo1: ['rate', 'depth', 'waveform'],
+  lfo2: ['rate', 'depth', 'waveform'],
+  output: ['masterVolume'],
+};
+
+class SynthGraph {
+  readonly kind: GraphKind;
+  private ctx: AudioContext;
+  private prefix: string;
+  masterGain: GainNode;
+  analyserTime: AnalyserNode;
+  analyserFreq: AnalyserNode;
   private nodes: Map<ModuleId, Map<string, AudioNode>> = new Map();
   private jackRefs: Map<string, AudioJackRef> = new Map();
   private connections: Set<string> = new Set();
   private activeOscillators: Set<OscillatorNode> = new Set();
 
-  async init(): Promise<void> {
-    if (this.ctx) return;
-    this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    this.masterGain = this.ctx.createGain();
-    this.masterGain.gain.value = 0.3;
+  constructor(kind: GraphKind, ctx: AudioContext) {
+    this.kind = kind;
+    this.ctx = ctx;
+    this.prefix = kind === 'player' ? '' : '__tgt_';
 
-    this.analyserTime = this.ctx.createAnalyser();
+    this.masterGain = ctx.createGain();
+    this.masterGain.gain.value = kind === 'player' ? 0.3 : 0.3;
+
+    this.analyserTime = ctx.createAnalyser();
     this.analyserTime.fftSize = 2048;
 
-    this.analyserFreq = this.ctx.createAnalyser();
+    this.analyserFreq = ctx.createAnalyser();
     this.analyserFreq.fftSize = 1024;
 
     this.masterGain.connect(this.analyserTime);
     this.masterGain.connect(this.analyserFreq);
-    this.analyserTime.connect(this.ctx.destination);
 
-    this.buildAllModules();
-  }
-
-  private ensureCtx(): AudioContext {
-    if (!this.ctx) throw new Error('AudioEngine not initialized');
-    return this.ctx;
-  }
-
-  private buildAllModules() {
-    const ctx = this.ensureCtx();
     for (const def of MODULE_DEFS) {
-      this.buildModule(def.id, ctx);
+      this.buildModule(def.id);
     }
     this.registerJack('output:IN', { node: this.masterGain });
   }
 
-  private buildModule(id: ModuleId, ctx: AudioContext) {
+  private jackKey(id: string): string {
+    return this.prefix + id;
+  }
+
+  private registerJack(jackId: string, ref: AudioJackRef) {
+    this.jackRefs.set(this.jackKey(jackId), ref);
+  }
+
+  private buildModule(id: ModuleId) {
+    const ctx = this.ctx;
     const moduleNodes = new Map<string, AudioNode>();
 
     switch (id) {
@@ -57,7 +70,7 @@ class AudioEngine {
       case 'vco2': {
         const osc = ctx.createOscillator();
         osc.type = 'sawtooth';
-        osc.frequency.value = 220;
+        osc.frequency.value = id === 'vco1' ? 220 : 330;
         const outGain = ctx.createGain();
         outGain.gain.value = 0.6;
         osc.connect(outGain);
@@ -74,9 +87,9 @@ class AudioEngine {
       case 'lfo2': {
         const osc = ctx.createOscillator();
         osc.type = 'sine';
-        osc.frequency.value = 5;
+        osc.frequency.value = id === 'lfo1' ? 5 : 0.5;
         const depthGain = ctx.createGain();
-        depthGain.gain.value = 100;
+        depthGain.gain.value = id === 'lfo1' ? 100 : 0.3;
         osc.connect(depthGain);
         osc.start();
         this.activeOscillators.add(osc);
@@ -116,22 +129,11 @@ class AudioEngine {
       case 'output':
         break;
     }
-
     this.nodes.set(id, moduleNodes);
   }
 
-  private registerJack(jackId: string, ref: AudioJackRef) {
-    this.jackRefs.set(jackId, ref);
-  }
-
-  resume(): void {
-    if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
-    }
-  }
-
   setParam(moduleId: ModuleId, paramName: string, value: number): void {
-    const ctx = this.ensureCtx();
+    const ctx = this.ctx;
     const moduleNodes = this.nodes.get(moduleId);
     if (!moduleNodes) return;
 
@@ -186,9 +188,7 @@ class AudioEngine {
         break;
       }
       case 'output': {
-        if (paramName === 'masterVolume' && this.masterGain) {
-          this.masterGain.gain.setTargetAtTime(value, ctx.currentTime, 0.01);
-        }
+        this.masterGain.gain.setTargetAtTime(value, ctx.currentTime, 0.01);
         break;
       }
     }
@@ -213,8 +213,8 @@ class AudioEngine {
     const key = `${cable.from}->${cable.to}`;
     if (this.connections.has(key)) return;
 
-    const fromJack = this.jackRefs.get(cable.from);
-    const toJack = this.jackRefs.get(cable.to);
+    const fromJack = this.jackRefs.get(this.jackKey(cable.from));
+    const toJack = this.jackRefs.get(this.jackKey(cable.to));
     const fromDef = getJackDef(cable.from);
     const toDef = getJackDef(cable.to);
 
@@ -234,17 +234,15 @@ class AudioEngine {
         }
         this.connections.add(key);
       }
-    } catch (e) {
-      console.warn('connect failed:', e);
-    }
+    } catch (e) {}
   }
 
   disconnect(cable: Cable): void {
     const key = `${cable.from}->${cable.to}`;
     if (!this.connections.has(key)) return;
 
-    const fromJack = this.jackRefs.get(cable.from);
-    const toJack = this.jackRefs.get(cable.to);
+    const fromJack = this.jackRefs.get(this.jackKey(cable.from));
+    const toJack = this.jackRefs.get(this.jackKey(cable.to));
     if (!fromJack?.node) {
       this.connections.delete(key);
       return;
@@ -262,8 +260,8 @@ class AudioEngine {
   disconnectAll(): void {
     for (const key of Array.from(this.connections)) {
       const [from, to] = key.split('->');
-      const fromJack = this.jackRefs.get(from);
-      const toJack = this.jackRefs.get(to);
+      const fromJack = this.jackRefs.get(this.jackKey(from));
+      const toJack = this.jackRefs.get(this.jackKey(to));
       try {
         if (fromJack?.node && toJack?.param) {
           fromJack.node.disconnect(toJack.param);
@@ -275,74 +273,17 @@ class AudioEngine {
     this.connections.clear();
   }
 
-  getTimeDomainData(arr: Uint8Array): void {
-    this.analyserTime?.getByteTimeDomainData(arr);
-  }
-
-  getFrequencyData(arr: Uint8Array): void {
-    this.analyserFreq?.getByteFrequencyData(arr);
-  }
-
-  getTimeDomainFloat(arr: Float32Array): void {
-    this.analyserTime?.getFloatTimeDomainData(arr);
-  }
-
-  getFrequencyFloat(arr: Float32Array): void {
-    this.analyserFreq?.getFloatFrequencyData(arr);
-  }
-
-  isInitialized(): boolean {
-    return this.ctx !== null;
-  }
-
-  destroy(): void {
-    this.disconnectAll();
-    for (const osc of this.activeOscillators) {
-      try { osc.stop(); } catch (e) {}
-    }
-    this.activeOscillators.clear();
-    if (this.ctx) {
-      this.ctx.close();
-      this.ctx = null;
-    }
-    this.nodes.clear();
-    this.jackRefs.clear();
-  }
-
-  previewTargetSound(params: ParamMap, cables: Cable[], duration: number = 2): void {
-    const savedParams: ParamMap = JSON.parse(JSON.stringify(this.snapshotParams()));
-    const savedCables: Cable[] = this.getAllCablesSnapshot();
-
-    this.applyAllCables(cables);
-    this.applyAllParams(params);
-
-    setTimeout(() => {
-      this.applyAllCables(savedCables);
-      this.applyAllParams(savedParams);
-    }, duration * 1000);
-  }
-
-  private snapshotParams(): ParamMap {
-    const result: ParamMap = {} as ParamMap;
-    const paramNames: Record<ModuleId, string[]> = {
-      vco1: ['frequency', 'waveform'],
-      vco2: ['frequency', 'waveform'],
-      vcf: ['cutoff', 'resonance', 'filterType'],
-      vca: ['initialGain', 'modAmount'],
-      lfo1: ['rate', 'depth', 'waveform'],
-      lfo2: ['rate', 'depth', 'waveform'],
-      output: ['masterVolume'],
-    };
-    for (const [modId, names] of Object.entries(paramNames)) {
-      result[modId as ModuleId] = {};
-      for (const name of names) {
-        result[modId as ModuleId][name] = this.readParamValue(modId as ModuleId, name);
-      }
+  getCablesSnapshot(): Cable[] {
+    const result: Cable[] = [];
+    let idx = 0;
+    for (const key of Array.from(this.connections)) {
+      const [from, to] = key.split('->');
+      result.push({ id: `snap-${this.kind}-${idx++}`, from, to, color: '#ff4d4d' });
     }
     return result;
   }
 
-  private readParamValue(moduleId: ModuleId, paramName: string): number {
+  readParamValue(moduleId: ModuleId, paramName: string): number {
     const moduleNodes = this.nodes.get(moduleId);
     if (!moduleNodes) return 0;
     switch (moduleId) {
@@ -384,26 +325,187 @@ class AudioEngine {
         break;
       }
       case 'output': {
-        if (paramName === 'masterVolume') return this.masterGain?.gain.value ?? 0.3;
-        break;
+        return this.masterGain?.gain.value ?? 0.3;
       }
     }
     return 0;
   }
 
-  private getAllCablesSnapshot(): Cable[] {
-    const result: Cable[] = [];
-    let idx = 0;
-    for (const key of Array.from(this.connections)) {
-      const [from, to] = key.split('->');
-      result.push({
-        id: `snap-${idx++}`,
-        from,
-        to,
-        color: '#ff4d4d',
-      });
+  snapshotParams(): ParamMap {
+    const result: ParamMap = {} as ParamMap;
+    for (const [modId, names] of Object.entries(PARAM_DEFS)) {
+      result[modId as ModuleId] = {};
+      for (const name of names) {
+        result[modId as ModuleId][name] = this.readParamValue(modId as ModuleId, name);
+      }
     }
     return result;
+  }
+
+  getTimeDomainData(arr: Uint8Array): void {
+    this.analyserTime.getByteTimeDomainData(arr);
+  }
+
+  getFrequencyData(arr: Uint8Array): void {
+    this.analyserFreq.getByteFrequencyData(arr);
+  }
+
+  destroy(): void {
+    this.disconnectAll();
+    for (const osc of this.activeOscillators) {
+      try { osc.stop(); } catch (e) {}
+    }
+    this.activeOscillators.clear();
+    this.nodes.clear();
+    this.jackRefs.clear();
+  }
+}
+
+class AudioEngine {
+  private ctx: AudioContext | null = null;
+  private playerGraph: SynthGraph | null = null;
+  private targetGraph: SynthGraph | null = null;
+
+  private playerOutputGain: GainNode | null = null;
+  private targetOutputGain: GainNode | null = null;
+  private finalGain: GainNode | null = null;
+
+  private targetPreviewTimer: number | null = null;
+  private currentOutputMix: number = 0;
+
+  async init(): Promise<void> {
+    if (this.ctx) return;
+    this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+
+    this.playerGraph = new SynthGraph('player', this.ctx);
+    this.targetGraph = new SynthGraph('target', this.ctx);
+
+    this.playerOutputGain = this.ctx.createGain();
+    this.playerOutputGain.gain.value = 1;
+
+    this.targetOutputGain = this.ctx.createGain();
+    this.targetOutputGain.gain.value = 0;
+
+    this.finalGain = this.ctx.createGain();
+    this.finalGain.gain.value = 1;
+
+    this.playerGraph.analyserTime.disconnect();
+    this.playerGraph.analyserFreq.disconnect();
+    this.targetGraph.analyserTime.disconnect();
+    this.targetGraph.analyserFreq.disconnect();
+
+    this.playerGraph.masterGain.connect(this.playerOutputGain);
+    this.targetGraph.masterGain.connect(this.targetOutputGain);
+
+    this.playerOutputGain.connect(this.finalGain);
+    this.targetOutputGain.connect(this.finalGain);
+    this.finalGain.connect(this.ctx.destination);
+
+    this.targetGraph.disconnectAll();
+  }
+
+  private ensureCtx(): AudioContext {
+    if (!this.ctx) throw new Error('AudioEngine not initialized');
+    return this.ctx;
+  }
+
+  resume(): void {
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
+  }
+
+  setParam(moduleId: ModuleId, paramName: string, value: number): void {
+    this.playerGraph?.setParam(moduleId, paramName, value);
+  }
+
+  applyAllParams(params: ParamMap): void {
+    this.playerGraph?.applyAllParams(params);
+  }
+
+  applyAllCables(cables: Cable[]): void {
+    this.playerGraph?.applyAllCables(cables);
+  }
+
+  connect(cable: Cable): void {
+    this.playerGraph?.connect(cable);
+  }
+
+  disconnect(cable: Cable): void {
+    this.playerGraph?.disconnect(cable);
+  }
+
+  disconnectAll(): void {
+    this.playerGraph?.disconnectAll();
+  }
+
+  setTargetConfiguration(params: ParamMap, cables: Cable[]): void {
+    if (!this.targetGraph) return;
+    this.targetGraph.applyAllParams(params);
+    this.targetGraph.applyAllCables(cables);
+  }
+
+  setOutputMix(playerWeight: number): void {
+    const ctx = this.ensureCtx();
+    const w = Math.max(0, Math.min(1, playerWeight));
+    this.currentOutputMix = w;
+    this.playerOutputGain?.gain.setTargetAtTime(w, ctx.currentTime, 0.02);
+    this.targetOutputGain?.gain.setTargetAtTime(1 - w, ctx.currentTime, 0.02);
+  }
+
+  previewTargetSound(duration: number = 2): void {
+    if (!this.ctx) return;
+    this.setOutputMix(0);
+    if (this.targetPreviewTimer !== null) {
+      window.clearTimeout(this.targetPreviewTimer);
+    }
+    this.targetPreviewTimer = window.setTimeout(() => {
+      this.setOutputMix(1);
+      this.targetPreviewTimer = null;
+    }, duration * 1000);
+  }
+
+  isPreviewingTarget(): boolean {
+    return this.currentOutputMix < 0.5;
+  }
+
+  getTimeDomainData(arr: Uint8Array, kind: GraphKind = 'player'): void {
+    const g = kind === 'player' ? this.playerGraph : this.targetGraph;
+    g?.getTimeDomainData(arr);
+  }
+
+  getFrequencyData(arr: Uint8Array, kind: GraphKind = 'player'): void {
+    const g = kind === 'player' ? this.playerGraph : this.targetGraph;
+    g?.getFrequencyData(arr);
+  }
+
+  getDualTimeDomain(playerBuf: Uint8Array, targetBuf: Uint8Array): void {
+    this.playerGraph?.getTimeDomainData(playerBuf);
+    this.targetGraph?.getTimeDomainData(targetBuf);
+  }
+
+  getDualFrequency(playerBuf: Uint8Array, targetBuf: Uint8Array): void {
+    this.playerGraph?.getFrequencyData(playerBuf);
+    this.targetGraph?.getFrequencyData(targetBuf);
+  }
+
+  isInitialized(): boolean {
+    return this.ctx !== null;
+  }
+
+  destroy(): void {
+    if (this.targetPreviewTimer !== null) {
+      window.clearTimeout(this.targetPreviewTimer);
+      this.targetPreviewTimer = null;
+    }
+    this.playerGraph?.destroy();
+    this.targetGraph?.destroy();
+    this.playerGraph = null;
+    this.targetGraph = null;
+    if (this.ctx) {
+      this.ctx.close();
+      this.ctx = null;
+    }
   }
 
   checkJackType(jackId: string): JackType | null {

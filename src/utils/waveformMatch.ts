@@ -58,7 +58,9 @@ export function computeCosineSimilarity(a: Float32Array, b: Float32Array): numbe
 export function computeAutoCorrelation(signal: Float32Array, maxLag: number = 512): Float32Array {
   const n = signal.length;
   const acf = new Float32Array(maxLag);
-  const mean = signal.reduce((s, v) => s + v, 0) / n;
+  let mean = 0;
+  for (let i = 0; i < n; i++) mean += signal[i];
+  mean /= n;
   let variance = 0;
   for (let i = 0; i < n; i++) {
     const d = signal[i] - mean;
@@ -125,6 +127,7 @@ export function findBestPhaseShift(target: Float32Array, current: Float32Array, 
   let bestShift = 0;
   let bestMSE = Infinity;
   const len = Math.min(target.length, current.length) - maxShift;
+  if (len <= 0) return { shift: 0, mse: 1 };
   for (let s = 0; s < maxShift; s++) {
     let sum = 0;
     for (let i = 0; i < len; i++) {
@@ -140,6 +143,22 @@ export function findBestPhaseShift(target: Float32Array, current: Float32Array, 
   return { shift: bestShift, mse: bestMSE };
 }
 
+export function generateSpectrum(wave: Float32Array, size: number): Float32Array {
+  const n = wave.length;
+  const spec = new Float32Array(size);
+  for (let k = 0; k < size; k++) {
+    let re = 0;
+    let im = 0;
+    for (let i = 0; i < n; i++) {
+      const angle = -2 * Math.PI * k * i / n;
+      re += wave[i] * Math.cos(angle);
+      im += wave[i] * Math.sin(angle);
+    }
+    spec[k] = Math.sqrt(re * re + im * im) / n;
+  }
+  return spec;
+}
+
 export interface MatchScore {
   total: number;
   waveformMSE: number;
@@ -149,63 +168,63 @@ export interface MatchScore {
   lfoFeature: number;
 }
 
-export function computeMatchScore(
-  targetWave: number[],
-  targetSpec: number[],
-  currentWaveByte: Uint8Array,
-  currentSpecByte: Uint8Array
-): MatchScore {
-  const tWave = new Float32Array(targetWave);
-  const tSpec = new Float32Array(targetSpec);
-  const cWave = normalizeByte(currentWaveByte);
-  const cSpec = normalizeByte(currentSpecByte);
+export interface DualTrackData {
+  playerWave: Uint8Array;
+  playerSpec: Uint8Array;
+  targetWave: Uint8Array;
+  targetSpec: Uint8Array;
+}
 
+export function computeDualMatchScore(data: DualTrackData): MatchScore {
+  const pWave = normalizeByte(data.playerWave);
+  const pSpec = normalizeByte(data.playerSpec);
+  const tWave = normalizeByte(data.targetWave);
+  const tSpec = normalizeByte(data.targetSpec);
+
+  const nPWave = normalizeArray(pWave);
   const nTWave = normalizeArray(tWave);
-  const nCWave = normalizeArray(cWave);
-  const minSpecLen = Math.min(tSpec.length, cSpec.length);
+
+  const minSpecLen = Math.min(pSpec.length, tSpec.length);
+  const nPSpec = normalizeArray(pSpec.slice(0, minSpecLen));
   const nTSpec = normalizeArray(tSpec.slice(0, minSpecLen));
-  const nCSpec = normalizeArray(cSpec.slice(0, minSpecLen));
 
+  const logP = normalizeArray(logSpectrumWarp(nPSpec, 96));
   const logT = normalizeArray(logSpectrumWarp(nTSpec, 96));
-  const logC = normalizeArray(logSpectrumWarp(nCSpec, 96));
+  const smoothLogP = smoothArray(logP, 3);
   const smoothLogT = smoothArray(logT, 3);
-  const smoothLogC = smoothArray(logC, 3);
-  const specCos = Math.max(0, computeCosineSimilarity(smoothLogT, smoothLogC));
+  const specCos = Math.max(0, computeCosineSimilarity(smoothLogP, smoothLogT));
 
-  const phase = findBestPhaseShift(nTWave, nCWave, 256);
-  const shiftedC = new Float32Array(nTWave.length);
-  for (let i = 0; i < shiftedC.length; i++) {
-    shiftedC[i] = nCWave[(i + phase.shift) % nCWave.length] ?? 0.5;
+  const phase = findBestPhaseShift(nTWave, nPWave, 256);
+  const shiftedP = new Float32Array(nTWave.length);
+  for (let i = 0; i < shiftedP.length; i++) {
+    shiftedP[i] = nPWave[(i + phase.shift) % nPWave.length] ?? 0.5;
   }
-  const waveMSE = computeMSE(nTWave, shiftedC);
-  const maxMSE = 0.08;
-  const waveScore = Math.max(0, 1 - waveMSE / maxMSE);
+  const waveMSE = computeMSE(nTWave, shiftedP);
+  const waveScore = Math.max(0, 1 - waveMSE / 0.08);
 
-  const acfMaxLag = Math.min(400, Math.floor(Math.min(nTWave.length, nCWave.length) * 0.25));
+  const acfMaxLag = Math.min(400, Math.floor(Math.min(nTWave.length, nPWave.length) * 0.25));
   const tACF = computeAutoCorrelation(zeroMean(nTWave), acfMaxLag);
-  const cACF = computeAutoCorrelation(zeroMean(nCWave), acfMaxLag);
-  const smoothTACF = smoothArray(tACF, 4);
-  const smoothCACF = smoothArray(cACF, 4);
-  const acfCos = Math.max(0, computeCosineSimilarity(smoothTACF, smoothCACF));
+  const pACF = computeAutoCorrelation(zeroMean(nPWave), acfMaxLag);
+  const acfCos = Math.max(0, computeCosineSimilarity(smoothArray(tACF, 4), smoothArray(pACF, 4)));
 
+  const envP = computeHilbertEnvelope(nPWave);
   const envT = computeHilbertEnvelope(nTWave);
-  const envC = computeHilbertEnvelope(nCWave);
+  const nEnvP = normalizeArray(envP);
   const nEnvT = normalizeArray(envT);
-  const nEnvC = normalizeArray(envC);
-  const envPhase = findBestPhaseShift(nEnvT, nEnvC, 300);
-  const shiftedEnvC = new Float32Array(nEnvT.length);
-  for (let i = 0; i < shiftedEnvC.length; i++) {
-    shiftedEnvC[i] = nEnvC[(i + envPhase.shift) % nEnvC.length] ?? 0.5;
+  const envPhase = findBestPhaseShift(nEnvT, nEnvP, 300);
+  const shiftedEnvP = new Float32Array(nEnvT.length);
+  for (let i = 0; i < shiftedEnvP.length; i++) {
+    shiftedEnvP[i] = nEnvP[(i + envPhase.shift) % nEnvP.length] ?? 0.5;
   }
-  const envCorr = Math.max(0, computeCosineSimilarity(nEnvT, shiftedEnvC));
+  const envCorr = Math.max(0, computeCosineSimilarity(nEnvT, shiftedEnvP));
 
+  const envDemeanP = zeroMean(envP);
   const envDemeanT = zeroMean(envT);
-  const envDemeanC = zeroMean(envC);
+  const envSpecP = generateSpectrum(envDemeanP, Math.min(128, Math.floor(envP.length / 4)));
   const envSpecT = generateSpectrum(envDemeanT, Math.min(128, Math.floor(envT.length / 4)));
-  const envSpecC = generateSpectrum(envDemeanC, Math.min(128, Math.floor(envC.length / 4)));
+  const nEnvSpecP = normalizeArray(envSpecP);
   const nEnvSpecT = normalizeArray(envSpecT);
-  const nEnvSpecC = normalizeArray(envSpecC);
-  const lfoFeature = Math.max(0, computeCosineSimilarity(nEnvSpecT.slice(0, 64), nEnvSpecC.slice(0, 64)));
+  const lfoFeature = Math.max(0, computeCosineSimilarity(nEnvSpecT.slice(0, 64), nEnvSpecP.slice(0, 64)));
 
   const total = Math.max(0, Math.min(100,
     (waveScore * 15) +
@@ -223,90 +242,4 @@ export function computeMatchScore(
     envelopeCorr: envCorr,
     lfoFeature,
   };
-}
-
-export function generateSyntheticWaveform(
-  type: OscillatorType,
-  freq: number,
-  sampleRate: number,
-  length: number,
-  lfoRate: number = 0,
-  lfoDepth: number = 0,
-  filterCutoff: number = 0,
-  filterQ: number = 0
-): Float32Array {
-  return generateSyntheticWaveformWithPhase(
-    type, freq, sampleRate, length, lfoRate, lfoDepth, filterCutoff, filterQ, 0
-  );
-}
-
-export function generateSyntheticWaveformWithPhase(
-  type: OscillatorType,
-  freq: number,
-  sampleRate: number,
-  length: number,
-  lfoRate: number,
-  lfoDepth: number,
-  filterCutoff: number,
-  filterQ: number,
-  phaseOffset: number
-): Float32Array {
-  const out = new Float32Array(length);
-  const dt = 1 / sampleRate;
-  for (let i = 0; i < length; i++) {
-    const t = i * dt;
-    let phase = 2 * Math.PI * freq * t + phaseOffset;
-    if (lfoRate > 0 && lfoDepth > 0) {
-      phase += lfoDepth * Math.sin(2 * Math.PI * lfoRate * t + phaseOffset * 0.7);
-    }
-    let v = 0;
-    switch (type) {
-      case 'sine':
-        v = Math.sin(phase);
-        break;
-      case 'square':
-        v = Math.sin(phase) >= 0 ? 1 : -1;
-        break;
-      case 'sawtooth':
-        v = 2 * ((phase / (2 * Math.PI)) - Math.floor((phase / (2 * Math.PI)) + 0.5));
-        break;
-      case 'triangle': {
-        const p = (phase / (2 * Math.PI)) % 1;
-        v = p < 0.25 ? 4 * p : p < 0.75 ? 2 - 4 * p : 4 * p - 4;
-        break;
-      }
-    }
-    out[i] = v;
-  }
-  if (filterCutoff > 0) {
-    simpleLowPass(out, sampleRate, filterCutoff, filterQ);
-  }
-  return out;
-}
-
-function simpleLowPass(arr: Float32Array, sampleRate: number, cutoff: number, q: number): void {
-  const rc = 1 / (2 * Math.PI * cutoff);
-  const alpha = rc / (rc + 1 / sampleRate);
-  let prev = arr[0];
-  const resonance = Math.min(0.9, q / 20);
-  for (let i = 1; i < arr.length; i++) {
-    const filtered = alpha * prev + (1 - alpha) * arr[i];
-    arr[i] = filtered + resonance * (filtered - prev);
-    prev = filtered;
-  }
-}
-
-export function generateSpectrum(wave: Float32Array, size: number): Float32Array {
-  const spec = new Float32Array(size);
-  for (let k = 0; k < size; k++) {
-    let re = 0;
-    let im = 0;
-    for (let n = 0; n < wave.length; n++) {
-      const angle = -2 * Math.PI * k * n / wave.length;
-      re += wave[n] * Math.cos(angle);
-      im += wave[n] * Math.sin(angle);
-    }
-    spec[k] = Math.sqrt(re * re + im * im) / wave.length;
-  }
-  return spec;
 }

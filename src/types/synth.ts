@@ -45,8 +45,6 @@ export interface ModuleDefinition {
 export interface LevelTargetSound {
   cables: Cable[];
   params: Record<ModuleId, Record<string, number>>;
-  waveform: number[];
-  spectrum: number[];
 }
 
 export interface Level {

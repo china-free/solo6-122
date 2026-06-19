@@ -12,7 +12,7 @@ export const Oscilloscope: React.FC<OscilloscopeProps> = ({ width = 560, height 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const specCanvasRef = useRef<HTMLCanvasElement>(null);
   const targetWaveRef = useRef<HTMLCanvasElement>(null);
-  const { getCurrentLevel, matchScore, isVictory } = useSynthStore();
+  const { matchScore, isVictory } = useSynthStore();
   const rafRef = useRef<number>(0);
 
   useEffect(() => {
@@ -25,29 +25,9 @@ export const Oscilloscope: React.FC<OscilloscopeProps> = ({ width = 560, height 
     const tctx = tgtCanvas.getContext('2d');
     if (!ctx || !sctx || !tctx) return;
 
-    const level = getCurrentLevel();
-
-    if (level) {
-      tctx.clearRect(0, 0, width, height);
-      const tWave = level.target.waveform;
-      tctx.strokeStyle = WAVEFORM_COLORS.target;
-      tctx.lineWidth = 1.5;
-      tctx.setLineDash([4, 4]);
-      tctx.beginPath();
-      const step = width / tWave.length;
-      for (let i = 0; i < tWave.length; i++) {
-        const x = i * step;
-        const normalized = (tWave[i] + 1) / 2;
-        const y = height - normalized * (height - 20) - 10;
-        if (i === 0) tctx.moveTo(x, y);
-        else tctx.lineTo(x, y);
-      }
-      tctx.stroke();
-      tctx.setLineDash([]);
-    }
-
-    const timeBuf = new Uint8Array(2048);
-    const freqBuf = new Uint8Array(1024);
+    const pTime = new Uint8Array(2048);
+    const tTime = new Uint8Array(2048);
+    const pFreq = new Uint8Array(1024);
 
     const gridW = width;
     const gridH = height;
@@ -55,6 +35,7 @@ export const Oscilloscope: React.FC<OscilloscopeProps> = ({ width = 560, height 
     const drawLoop = () => {
       ctx.clearRect(0, 0, gridW, gridH);
       sctx.clearRect(0, 0, gridW, gridH * 0.4);
+      tctx.clearRect(0, 0, gridW, gridH);
 
       ctx.strokeStyle = WAVEFORM_COLORS.grid;
       ctx.lineWidth = 0.5;
@@ -80,18 +61,33 @@ export const Oscilloscope: React.FC<OscilloscopeProps> = ({ width = 560, height 
       ctx.stroke();
 
       if (audioEngine.isInitialized()) {
-        audioEngine.getTimeDomainData(timeBuf);
-        audioEngine.getFrequencyData(freqBuf);
+        audioEngine.getTimeDomainData(pTime, 'player');
+        audioEngine.getTimeDomainData(tTime, 'target');
+        audioEngine.getFrequencyData(pFreq, 'player');
+
+        tctx.strokeStyle = WAVEFORM_COLORS.target;
+        tctx.lineWidth = 1.5;
+        tctx.setLineDash([4, 4]);
+        tctx.beginPath();
+        const tStep = gridW / tTime.length;
+        for (let i = 0; i < tTime.length; i++) {
+          const x = i * tStep;
+          const y = gridH - (tTime[i] / 255) * gridH;
+          if (i === 0) tctx.moveTo(x, y);
+          else tctx.lineTo(x, y);
+        }
+        tctx.stroke();
+        tctx.setLineDash([]);
 
         ctx.shadowColor = WAVEFORM_COLORS.currentGlow;
         ctx.shadowBlur = 8;
         ctx.strokeStyle = WAVEFORM_COLORS.current;
         ctx.lineWidth = 2;
         ctx.beginPath();
-        const slice = gridW / timeBuf.length;
-        for (let i = 0; i < timeBuf.length; i++) {
-          const x = i * slice;
-          const y = gridH - (timeBuf[i] / 255) * gridH;
+        const pSlice = gridW / pTime.length;
+        for (let i = 0; i < pTime.length; i++) {
+          const x = i * pSlice;
+          const y = gridH - (pTime[i] / 255) * gridH;
           if (i === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         }
@@ -99,11 +95,11 @@ export const Oscilloscope: React.FC<OscilloscopeProps> = ({ width = 560, height 
         ctx.shadowBlur = 0;
 
         const barCount = 64;
-        const stepSize = Math.floor(freqBuf.length / barCount);
+        const stepSize = Math.floor(pFreq.length / barCount);
         const barW = gridW / barCount;
         for (let i = 0; i < barCount; i++) {
           let sum = 0;
-          for (let j = 0; j < stepSize; j++) sum += freqBuf[i * stepSize + j];
+          for (let j = 0; j < stepSize; j++) sum += pFreq[i * stepSize + j];
           const avg = sum / stepSize;
           const barH = (avg / 255) * (gridH * 0.4);
           const hue = 120 - (avg / 255) * 80;
@@ -116,7 +112,7 @@ export const Oscilloscope: React.FC<OscilloscopeProps> = ({ width = 560, height 
     };
     rafRef.current = requestAnimationFrame(drawLoop);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [width, height, getCurrentLevel]);
+  }, [width, height]);
 
   const scoreColor = isVictory ? '#34c759' : matchScore >= 60 ? '#ffcc00' : '#ff3b30';
 
