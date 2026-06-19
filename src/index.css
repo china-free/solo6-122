@@ -1,0 +1,333 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto+Condensed:wght@300;400;700&family=Share+Tech+Mono&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  body {
+    font-family: theme('fontFamily.body');
+    background: #0a0a0c;
+    color: #e5e5ea;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+}
+
+@layer components {
+  .screw {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #8a8a90 0%, #5a5a60 40%, #3a3a40 100%);
+    box-shadow: 
+      inset 0 1px 1px rgba(255,255,255,0.4),
+      inset 0 -1px 1px rgba(0,0,0,0.5),
+      0 1px 2px rgba(0,0,0,0.5);
+    position: relative;
+  }
+  .screw::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(45deg);
+    width: 6px;
+    height: 1.5px;
+    background: #2a2a30;
+    border-radius: 1px;
+    box-shadow: 0 0.5px 0 rgba(255,255,255,0.15);
+  }
+
+  .led {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 4px currentColor, inset 0 0 2px rgba(0,0,0,0.4);
+  }
+  .led.active {
+    box-shadow: 0 0 10px currentColor, 0 0 20px currentColor, inset 0 0 2px rgba(255,255,255,0.3);
+  }
+
+  .module-panel {
+    background: 
+      linear-gradient(180deg, #323236 0%, #28282c 50%, #1e1e22 100%);
+    background-blend-mode: overlay;
+    border: 2px solid #404046;
+    border-radius: 4px;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.08),
+      inset 0 -1px 0 rgba(0,0,0,0.3),
+      0 6px 14px rgba(0,0,0,0.5),
+      0 2px 4px rgba(0,0,0,0.3);
+  }
+
+  .rack-rail {
+    background:
+      linear-gradient(180deg, #3a3a40 0%, #2a2a30 50%, #202024 100%),
+      repeating-linear-gradient(0deg, transparent 0px, transparent 8px, rgba(0,0,0,0.06) 8px, rgba(0,0,0,0.06) 9px);
+    border-left: 3px solid #1a1a1c;
+    border-right: 3px solid #1a1a1c;
+  }
+
+  .crt-screen {
+    background: 
+      radial-gradient(ellipse at center, #0a1a0c 0%, #050a06 70%, #020403 100%);
+    border: 3px solid #2a2a2e;
+    border-radius: 6px;
+    position: relative;
+    overflow: hidden;
+  }
+  .crt-screen::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0,0,0,0.15) 0px,
+      rgba(0,0,0,0.15) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    pointer-events: none;
+    z-index: 10;
+  }
+  .crt-screen::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 30% 20%, rgba(255,255,255,0.06) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 11;
+  }
+
+  .btn-rack {
+    font-family: theme('fontFamily.display');
+    letter-spacing: 0.08em;
+    background: linear-gradient(180deg, #4a4a50 0%, #323236 50%, #28282c 100%);
+    border: 2px solid #5a5a60;
+    border-radius: 3px;
+    color: #e8e8ec;
+    text-shadow: 0 1px 0 rgba(0,0,0,0.6);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.1),
+      inset 0 -2px 0 rgba(0,0,0,0.3),
+      0 2px 4px rgba(0,0,0,0.4);
+    transition: all 0.1s;
+    cursor: pointer;
+  }
+  .btn-rack:hover {
+    background: linear-gradient(180deg, #5a5a60 0%, #3a3a40 50%, #2e2e34 100%);
+    border-color: #6a6a70;
+  }
+  .btn-rack:active {
+    transform: translateY(1px);
+    box-shadow:
+      inset 0 1px 2px rgba(0,0,0,0.4),
+      0 1px 2px rgba(0,0,0,0.4);
+  }
+  .btn-rack.primary {
+    background: linear-gradient(180deg, #a87820 0%, #8b6914 50%, #6e520e 100%);
+    border-color: #c08c40;
+    color: #fff8e0;
+  }
+  .btn-rack.primary:hover {
+    background: linear-gradient(180deg, #c08c40 0%, #a87820 50%, #8b6914 100%);
+  }
+  .btn-rack.success {
+    background: linear-gradient(180deg, #34c759 0%, #28a745 50%, #1e7e34 100%);
+    border-color: #40d96a;
+    color: #e8ffe8;
+  }
+
+  .btn-wave {
+    width: 32px;
+    height: 24px;
+    background: linear-gradient(180deg, #3a3a40 0%, #2a2a30 100%);
+    border: 1.5px solid #4a4a50;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.1s;
+  }
+  .btn-wave:hover {
+    border-color: #6a6a70;
+  }
+  .btn-wave.active {
+    background: linear-gradient(180deg, #ffcc00 0%, #e0b000 100%);
+    border-color: #ffd93d;
+    box-shadow: 0 0 8px rgba(255, 204, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.3);
+  }
+  .btn-wave.active svg {
+    stroke: #1a1a1c;
+  }
+
+  .jack-socket {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 40% 35%, #5a5a60 0%, #3a3a40 50%, #202024 100%);
+    box-shadow:
+      inset 0 2px 3px rgba(0,0,0,0.6),
+      inset 0 -1px 1px rgba(255,255,255,0.08),
+      0 1px 2px rgba(0,0,0,0.5);
+    position: relative;
+    cursor: crosshair;
+  }
+  .jack-socket::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #0a0a0c;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.8);
+  }
+  .jack-socket.audio-out, .jack-socket.cv-out {
+    background: radial-gradient(circle at 40% 35%, #7a5a30 0%, #5a4020 50%, #3a2a10 100%);
+  }
+  .jack-socket.audio-out::after, .jack-socket.cv-out::after {
+    background: #1a1208;
+  }
+  .jack-socket:hover {
+    filter: brightness(1.3);
+  }
+  .jack-socket.hover-target {
+    box-shadow:
+      inset 0 2px 3px rgba(0,0,0,0.6),
+      inset 0 -1px 1px rgba(255,255,255,0.08),
+      0 0 0 3px rgba(255, 204, 0, 0.6),
+      0 0 16px rgba(255, 204, 0, 0.5),
+      0 1px 2px rgba(0,0,0,0.5);
+  }
+  .jack-socket.connected {
+    filter: saturate(1.5) brightness(1.15);
+  }
+
+  .cable-path {
+    stroke-width: 5;
+    fill: none;
+    stroke-linecap: round;
+    cursor: pointer;
+    pointer-events: stroke;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5));
+  }
+  .cable-path:hover {
+    stroke-width: 7;
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.7)) brightness(1.2);
+  }
+  .cable-path.preview {
+    stroke-dasharray: 8 4;
+    opacity: 0.7;
+    pointer-events: none;
+  }
+  .cable-path.victory {
+    stroke-dasharray: 10 10;
+    animation: cable-flow 0.8s linear infinite;
+  }
+
+  .label-tag {
+    font-family: theme('fontFamily.mono');
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #a0a0a8;
+    text-shadow: 0 1px 0 rgba(0,0,0,0.6);
+  }
+  .label-tag.out {
+    color: #ffcc80;
+  }
+  .label-tag.in {
+    color: #80ccff;
+  }
+
+  .knob-outer {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: 
+      conic-gradient(from 220deg, 
+        #ffcc00 0deg,
+        #ffcc00 var(--knob-angle, 140deg),
+        transparent var(--knob-angle, 140deg),
+        transparent 280deg
+      );
+    padding: 2px;
+    cursor: grab;
+  }
+  .knob-outer:active {
+    cursor: grabbing;
+  }
+  .knob-inner {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: 
+      radial-gradient(circle at 35% 30%, #7a7a80 0%, #4a4a50 30%, #2a2a30 70%, #1a1a20 100%);
+    box-shadow:
+      inset 0 -3px 6px rgba(0,0,0,0.7),
+      inset 0 2px 3px rgba(255,255,255,0.12),
+      0 2px 6px rgba(0,0,0,0.6);
+    position: relative;
+    transition: transform 0.05s;
+  }
+  .knob-pointer {
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    height: 12px;
+    background: #fff;
+    border-radius: 1px;
+    box-shadow: 0 0 4px rgba(255,255,255,0.5);
+  }
+  .knob-value {
+    font-family: theme('fontFamily.mono');
+    font-size: 9px;
+    color: #ffcc00;
+    text-align: center;
+    position: absolute;
+    bottom: 2px;
+    left: 0;
+    right: 0;
+  }
+}
+
+@layer utilities {
+  .text-shadow-neon-green {
+    text-shadow: 0 0 4px rgba(52, 199, 89, 0.8), 0 0 8px rgba(52, 199, 89, 0.4);
+  }
+  .brushed-metal-texture {
+    background-image: 
+      repeating-linear-gradient(90deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 2px),
+      repeating-linear-gradient(90deg, rgba(0,0,0,0.025) 0px, rgba(0,0,0,0.025) 1px, transparent 1px, transparent 3px);
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: rgba(0,0,0,0.3);
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #5a5a60;
+    border-radius: 3px;
+  }
+}
