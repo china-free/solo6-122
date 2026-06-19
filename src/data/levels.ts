@@ -1,5 +1,5 @@
 import type { Level } from '@/types/synth';
-import { generateSyntheticWaveform, generateSpectrum } from '@/utils/waveformMatch';
+import { generateSyntheticWaveform, generateSyntheticWaveformWithPhase, generateSpectrum } from '@/utils/waveformMatch';
 
 const SAMPLE_RATE = 44100;
 const WAVE_LEN = 2048;
@@ -16,7 +16,23 @@ function buildSignatures(
   const wave = generateSyntheticWaveform(
     oscType, freq, SAMPLE_RATE, WAVE_LEN, lfoRate, lfoDepth, filterCutoff, filterQ
   );
-  const spec = generateSpectrum(wave, SPEC_LEN);
+  let spec: Float32Array;
+  if (lfoRate > 0 && lfoDepth > 0) {
+    const PHASES = 24;
+    const acc = new Float64Array(SPEC_LEN);
+    for (let p = 0; p < PHASES; p++) {
+      const phase = (p / PHASES) * Math.PI * 2;
+      const w = generateSyntheticWaveformWithPhase(
+        oscType, freq, SAMPLE_RATE, WAVE_LEN, lfoRate, lfoDepth, filterCutoff, filterQ, phase
+      );
+      const s = generateSpectrum(w, SPEC_LEN);
+      for (let i = 0; i < SPEC_LEN; i++) acc[i] += s[i];
+    }
+    spec = new Float32Array(SPEC_LEN);
+    for (let i = 0; i < SPEC_LEN; i++) spec[i] = acc[i] / PHASES;
+  } else {
+    spec = generateSpectrum(wave, SPEC_LEN);
+  }
   return {
     waveform: Array.from(wave),
     spectrum: Array.from(spec),

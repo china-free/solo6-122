@@ -311,11 +311,11 @@ class AudioEngine {
 
   previewTargetSound(params: ParamMap, cables: Cable[], duration: number = 2): void {
     const savedParams: ParamMap = JSON.parse(JSON.stringify(this.snapshotParams()));
-    const savedCables: Cable[] = this.getAllCablesSnapshot(cables);
-    
+    const savedCables: Cable[] = this.getAllCablesSnapshot();
+
     this.applyAllCables(cables);
     this.applyAllParams(params);
-    
+
     setTimeout(() => {
       this.applyAllCables(savedCables);
       this.applyAllParams(savedParams);
@@ -391,8 +391,19 @@ class AudioEngine {
     return 0;
   }
 
-  private getAllCablesSnapshot(currentCables: Cable[]): Cable[] {
-    return [...currentCables];
+  private getAllCablesSnapshot(): Cable[] {
+    const result: Cable[] = [];
+    let idx = 0;
+    for (const key of Array.from(this.connections)) {
+      const [from, to] = key.split('->');
+      result.push({
+        id: `snap-${idx++}`,
+        from,
+        to,
+        color: '#ff4d4d',
+      });
+    }
+    return result;
   }
 
   checkJackType(jackId: string): JackType | null {

@@ -211,27 +211,40 @@ export const useSynthStore = create<SynthState>((set, get) => ({
     if (!lvl || !audioEngine.isInitialized()) return;
     set({ isCheckingMatch: true });
 
-    let samples = 0;
+    const TARGET_FRAMES = 24;
+    let frames = 0;
     let totalScore = 0;
     const timeBuf = new Uint8Array(2048);
     const freqBuf = new Uint8Array(1024);
+    const accFreq = new Float64Array(1024);
 
     const sample = () => {
       audioEngine.getTimeDomainData(timeBuf);
       audioEngine.getFrequencyData(freqBuf);
-      const s = computeMatchScore(
+      for (let i = 0; i < 1024; i++) accFreq[i] += freqBuf[i];
+      const s1 = computeMatchScore(
         lvl.target.waveform,
         lvl.target.spectrum,
         timeBuf,
         freqBuf
       );
-      totalScore += s.total;
-      samples++;
-      set({ matchScore: Math.round(totalScore / samples) });
-      if (samples < 15) {
+      totalScore += s1.total;
+      frames++;
+      set({ matchScore: Math.round(totalScore / frames) });
+
+      if (frames < TARGET_FRAMES) {
         requestAnimationFrame(sample);
       } else {
-        const finalScore = Math.round(totalScore / samples);
+        const avgFreq = new Uint8Array(1024);
+        for (let i = 0; i < 1024; i++) avgFreq[i] = Math.round(accFreq[i] / TARGET_FRAMES);
+        const s2 = computeMatchScore(
+          lvl.target.waveform,
+          lvl.target.spectrum,
+          timeBuf,
+          avgFreq
+        );
+        const frameAvg = totalScore / frames;
+        const finalScore = Math.round(frameAvg * 0.4 + s2.total * 0.6);
         set({
           matchScore: finalScore,
           isCheckingMatch: false,
